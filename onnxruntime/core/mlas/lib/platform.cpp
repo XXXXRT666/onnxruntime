@@ -19,7 +19,7 @@ Abstract:
 #ifdef MLAS_USE_SVE
 #include "sve/mlasi_sve.h"
 #endif
-#if defined(USE_KLEIDIAI) && !defined(_MSC_VER)
+#if defined(USE_KLEIDIAI)
 #include "kleidiai/mlasi_kleidiai.h"
 #endif
 
@@ -34,7 +34,15 @@ Abstract:
 #define POWER_10_ANDUP (POWER_10)
 #include <sys/systemcfg.h>
 #define __power_10_andup() (_system_configuration.implementation & POWER_10_ANDUP)
+#elif defined(__FreeBSD__)
+#include <machine/cpu.h>
+#include <sys/auxv.h>
 #endif
+#endif
+
+
+#if defined(MLAS_TARGET_S390X)
+#include <sys/auxv.h>
 #endif
 
 #if defined(MLAS_TARGET_ARM64)
@@ -413,6 +421,8 @@ Return Value:
                 this->CastF32ToF16Kernel = &MlasCastF32ToF16KernelAvx2;
                 this->RopeDispatch = &MlasRopeDispatchAvx2;
 
+                // TODO(vraspar): check if this really goes here or if there are other platform reqs that we need to fulfill
+                this->LutGenKernel = &MlasLutGenKernelAvx2;
 
                 //
                 // Check if the processor supports Hybrid core architecture.
@@ -561,10 +571,21 @@ Return Value:
     this->EltwiseDispatch = &MlasEltwiseDispatchNeon;
 
 #if defined(MLAS_USE_ARM_NEON_NCHWC)
+    // Use the AArch64 assembly implementation on non-Windows platforms.
+#if !defined(_WIN32)
+    // Prefer the hand written micro-kernel for the NCHW convolution path. It
+    // offers a tighter schedule and a specialised two-output inner loop that
+    // reduces pressure on the memory system compared to the generic kernel.
+    this->ConvNchwFloatKernel = MlasConvNchwFloatKernelNeonAsm;
+#else
     this->ConvNchwFloatKernel = MlasConvNchwFloatKernelNeon;
+#endif
     this->ConvNchwcFloatKernel = MlasConvNchwcFloatKernelNeon;
     this->ConvDepthwiseFloatKernel = MlasConvDepthwiseFloatKernelNeon;
     this->ConvPointwiseFloatKernel = MlasConvPointwiseFloatKernelNeon;
+#if defined(__aarch64__) && defined(__linux__)
+    this->ConvPointwiseBf16Kernel = MlasConvPointwiseBf16KernelNeon;
+#endif
     this->PoolFloatKernel[MlasMaximumPooling] = MlasPoolMaximumFloatKernelNeon;
     this->PoolFloatKernel[MlasAveragePoolingExcludePad] = MlasPoolAverageExcludePadFloatKernelNeon;
     this->PoolFloatKernel[MlasAveragePoolingIncludePad] = MlasPoolAverageIncludePadFloatKernelNeon;
@@ -595,7 +616,7 @@ Return Value:
         this->ConvSymS8S8Dispatch = &MlasConvSymS8DispatchDot;
     }
 
-#if defined(USE_KLEIDIAI) && !defined(_MSC_VER)
+#if defined(USE_KLEIDIAI)
     if(MLAS_CPUIDINFO::GetCPUIDInfo().HasArm_SME()){
         this->MlasGemmBatchOverride = ArmKleidiAI::MlasGemmBatch;
         this->MlasGemmPackBSizeOverride = ArmKleidiAI::MlasGemmPackBSize;
@@ -692,6 +713,26 @@ Return Value:
 
 #endif // MLAS_TARGET_POWER
 
+#if defined(MLAS_TARGET_S390X)
+    this->GemmFloatKernel = MlasSgemmKernel;
+    this->GemmDoubleKernel = MlasDgemmKernel;
+    this->QuantizeLinearS8Kernel = MlasQuantizeLinearS8Kernel;
+    this->QuantizeLinearU8Kernel = MlasQuantizeLinearU8Kernel;
+    this->QuantizeLinearS16Kernel = MlasQuantizeLinearS16Kernel;
+    this->QuantizeLinearU16Kernel = MlasQuantizeLinearU16Kernel;
+    this->QuantizeLinearS4Kernel = MlasQuantizeLinearS4Kernel;
+    this->QuantizeLinearU4Kernel = MlasQuantizeLinearU4Kernel;
+
+    bool HasVXEInstructions = getauxval(AT_HWCAP) & HWCAP_S390_VXE;
+    if (HasVXEInstructions) {
+        this->GemmFloatKernel = MlasSgemmKernelZVECTOR;
+        this->GemmU8X8Dispatch = &MlasGemm8X8DispatchZVECTOR;
+
+        this->QuantizeLinearS8Kernel = MlasQuantizeLinearS8KernelZVECTOR;
+        this->QuantizeLinearU8Kernel = MlasQuantizeLinearU8KernelZVECTOR;
+    }
+#endif // MLAS_TARGET_S390X
+
 #if defined(MLAS_TARGET_LARCH64)
 
     //
@@ -717,12 +758,19 @@ Return Value:
         this->ComputeLogSoftmaxOutputF32Kernel = MlasComputeLogSoftmaxOutputF32KernelLasx;
         this->TransposePackB16x4Routine = MlasSgemmTransposePackB16x4Lasx;
 
+        // add new sqn-lasx kernel
+        this->QNBitGemmDispatch = &MlasSQNBitGemmDispatchLasx;
+
         this->GemmU8S8Dispatch = &MlasGemmU8X8DispatchLSX;
         this->GemmU8U8Dispatch = &MlasGemmU8X8DispatchLSX;
+        this->GemmS8S8Dispatch = &MlasGemmS8S8DispatchLSX;
+        this->GemmS8U8Dispatch = &MlasGemmS8U8DispatchLSX;
     }else if( cap_lsx ){
         this->GemmFloatKernel = MlasGemmFloatKernelLSX;
         this->GemmU8S8Dispatch = &MlasGemmU8X8DispatchLSX;
         this->GemmU8U8Dispatch = &MlasGemmU8X8DispatchLSX;
+        this->GemmS8S8Dispatch = &MlasGemmS8S8DispatchLSX;
+        this->GemmS8U8Dispatch = &MlasGemmS8U8DispatchLSX;
         this->TransposePackB16x4Routine = MlasSgemmTransposePackB16x4LSX;
         this->GemmDoubleKernel = MlasGemmDoubleKernelLSX;
         this->ConvNchwFloatKernel = MlasConvNchwFloatKernelLSX;

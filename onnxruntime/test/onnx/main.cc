@@ -56,7 +56,7 @@ void usage() {
       "\t-v: verbose\n"
       "\t-n [test_case_name]: Specifies a single test case to run.\n"
       "\t-e [EXECUTION_PROVIDER]: EXECUTION_PROVIDER could be 'cpu', 'cuda', 'dnnl', 'tensorrt', 'vsinpu'"
-      "'openvino', 'rocm', 'migraphx', 'acl', 'armnn', 'xnnpack', 'webgpu', 'nnapi', 'qnn', 'snpe' or 'coreml'. "
+      "'openvino', 'migraphx', 'acl', 'armnn', 'xnnpack', 'webgpu', 'nnapi', 'qnn', 'snpe' or 'coreml'. "
       "Default: 'cpu'.\n"
       "\t-p: Pause after launch, can attach debugger and continue\n"
       "\t-x: Use parallel executor, default (without -x): sequential executor.\n"
@@ -84,12 +84,14 @@ void usage() {
       "\t    '0', '1', '2', '3', default is '0'.\n"
       "\t    [QNN only] [soc_model]: The SoC Model number. Refer to QNN SDK documentation for specific values. Defaults to '0' (unknown). \n"
       "\t    [QNN only] [htp_arch]: The minimum HTP architecture. The driver will use ops compatible with this architecture. \n"
-      "\t    Options are '0', '68', '69', '73', '75'. Defaults to '0' (none). \n"
+      "\t    Options are '0', '68', '69', '73', '75', '81'. Defaults to '0' (none). \n"
       "\t    [QNN only] [device_id]: The ID of the device to use when setting 'htp_arch'. Defaults to '0' (for single device). \n"
       "\t    [QNN only] [enable_htp_fp16_precision]: Enable the HTP_FP16 precision so that the float32 model will be inferenced with fp16 precision. \n"
       "\t    Otherwise, it will be fp32 precision. Works for float32 model for HTP backend. Defaults to '1' (with FP16 precision.). \n"
       "\t    [QNN only] [offload_graph_io_quantization]: Offload graph input quantization and graph output dequantization to another EP (typically CPU EP). \n"
       "\t    Defaults to '0' (QNN EP handles the graph I/O quantization and dequantization). \n"
+      "\t    [QNN only] [extended_udma]: Enable HTP extended UDMA mode for better performance on supported hardware, options: \n"
+      "\t    '0' (disabled), '1' (enabled). Default: '0'. \n"
       "\t [Usage]: -e <provider_name> -i '<key1>|<value1> <key2>|<value2>' \n\n"
       "\t [Example] [For QNN EP] -e qnn -i \"profiling_level|detailed backend_type|cpu\" \n\n"
       "\t    [SNPE only] [runtime]: SNPE runtime, options: 'CPU', 'GPU', 'GPU_FLOAT16', 'DSP', 'AIP_FIXED_TF'. \n"
@@ -228,7 +230,6 @@ int real_main(int argc, char* argv[], Ort::Env& env) {
   bool enable_dml = false;
   bool enable_acl = false;
   bool enable_armnn = false;
-  bool enable_rocm = false;
   bool enable_migraphx = false;
   bool enable_webgpu = false;
   bool enable_xnnpack = false;
@@ -319,8 +320,6 @@ int real_main(int argc, char* argv[], Ort::Env& env) {
             enable_acl = true;
           } else if (!CompareCString(optarg, ORT_TSTR("armnn"))) {
             enable_armnn = true;
-          } else if (!CompareCString(optarg, ORT_TSTR("rocm"))) {
-            enable_rocm = true;
           } else if (!CompareCString(optarg, ORT_TSTR("migraphx"))) {
             enable_migraphx = true;
           } else if (!CompareCString(optarg, ORT_TSTR("webgpu"))) {
@@ -607,7 +606,7 @@ int real_main(int argc, char* argv[], Ort::Env& env) {
             ORT_THROW("Wrong value for htp_graph_finalization_optimization_mode. select from: " + str);
           }
         } else if (key == "htp_arch") {
-          std::unordered_set<std::string> supported_htp_archs = {"0", "68", "69", "73", "75"};
+          std::unordered_set<std::string> supported_htp_archs = {"0", "68", "69", "73", "75", "81"};
           if (supported_htp_archs.find(value) == supported_htp_archs.end()) {
             std::ostringstream str_stream;
             std::copy(supported_htp_archs.begin(), supported_htp_archs.end(),
@@ -615,7 +614,7 @@ int real_main(int argc, char* argv[], Ort::Env& env) {
             std::string str = str_stream.str();
             ORT_THROW("Wrong value for htp_arch. select from: " + str);
           }
-        } else if (key == "enable_htp_fp16_precision" || key == "offload_graph_io_quantization") {
+        } else if (key == "enable_htp_fp16_precision" || key == "offload_graph_io_quantization" || key == "extended_udma") {
           std::unordered_set<std::string> supported_options = {"0", "1"};
           if (supported_options.find(value) == supported_options.end()) {
             std::ostringstream str_stream;
@@ -629,7 +628,7 @@ int real_main(int argc, char* argv[], Ort::Env& env) {
               "Wrong key type entered. Choose from options: ['backend_type', 'backend_path', "
               "'profiling_level', 'profiling_file_path', 'rpc_control_latency', 'vtcm_mb', 'htp_performance_mode', "
               "'qnn_saver_path', 'htp_graph_finalization_optimization_mode', 'op_packages', 'qnn_context_priority', "
-              "'soc_model', 'htp_arch', 'device_id', 'enable_htp_fp16_precision', 'offload_graph_io_quantization']");
+              "'soc_model', 'htp_arch', 'device_id', 'enable_htp_fp16_precision', 'offload_graph_io_quantization', 'extended_udma']");
         }
 
         qnn_options[key] = value;
@@ -748,17 +747,6 @@ select from 'TF8', 'TF16', 'UINT8', 'FLOAT', 'ITENSOR'. \n)");
       return -1;
 #endif
     }
-    if (enable_rocm) {
-#ifdef USE_ROCM
-      OrtROCMProviderOptions rocm_options;
-      rocm_options.do_copy_in_default_stream = true;
-      // TODO: Support arena configuration for users of test runner
-      sf.AppendExecutionProvider_ROCM(rocm_options);
-#else
-      fprintf(stderr, "ROCM is not supported in this build");
-      return -1;
-#endif
-    }
     if (enable_migraphx) {
 #ifdef USE_MIGRAPHX
       Ort::ThrowOnError(OrtSessionOptionsAppendExecutionProvider_MIGraphX(sf, device_id));
@@ -795,24 +783,6 @@ select from 'TF8', 'TF16', 'UINT8', 'FLOAT', 'ITENSOR'. \n)");
     // Please make no more changes to the list
     static const ORTCHAR_T* immutable_broken_tests[] =
         {
-            // pending ONNX update
-            ORT_TSTR("attention_3d_gqa"),
-            ORT_TSTR("attention_3d_gqa_attn_mask"),
-            ORT_TSTR("attention_3d_gqa_causal"),
-            ORT_TSTR("attention_3d_gqa_scaled"),
-            ORT_TSTR("attention_3d_gqa_softcap"),
-            ORT_TSTR("attention_3d_gqa_with_past_and_present"),
-            ORT_TSTR("attention_4d_gqa"),
-            ORT_TSTR("attention_4d_gqa_attn_mask"),
-            ORT_TSTR("attention_4d_gqa_causal"),
-            ORT_TSTR("attention_4d_gqa_scaled"),
-            ORT_TSTR("attention_4d_gqa_softcap"),
-            ORT_TSTR("attention_4d_gqa_with_past_and_present"),
-            ORT_TSTR("attention_4d_diff_heads_mask4d_padded_kv"),
-            ORT_TSTR("attention_4d_gqa_with_past_and_present_fp16"),
-            ORT_TSTR("attention_4d_with_past_and_present_qk_matmul_bias_3d_mask_causal"),
-            ORT_TSTR("attention_4d_with_past_and_present_qk_matmul_bias_4d_mask_causal"),
-            // unsupported case
             ORT_TSTR("AvgPool1d"),
             ORT_TSTR("AvgPool1d_stride"),
             ORT_TSTR("AvgPool2d"),

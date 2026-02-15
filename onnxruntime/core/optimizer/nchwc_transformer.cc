@@ -437,7 +437,7 @@ void NchwcTransformerImpl::TransformConv(Node& node) {
       nchwc_conv_W_tensor_proto.add_dims(conv_W_dims[i]);
     }
 
-    nchwc_conv_W_arg = &graph_utils::AddInitializer(graph_, nchwc_conv_W_tensor_proto);
+    nchwc_conv_W_arg = &graph_utils::AddInitializerWithOrtValue(graph_, nchwc_conv_W_tensor_proto);
     filters_map->emplace(input_defs[1], nchwc_conv_W_arg);
   }
 
@@ -464,7 +464,7 @@ void NchwcTransformerImpl::TransformConv(Node& node) {
 
       nchwc_conv_B_tensor_proto.add_dims(nchwc_output_channels);
 
-      nchwc_conv_B_arg = &graph_utils::AddInitializer(graph_, nchwc_conv_B_tensor_proto);
+      nchwc_conv_B_arg = &graph_utils::AddInitializerWithOrtValue(graph_, nchwc_conv_B_tensor_proto);
       aligned_biases_.emplace(input_defs[2], nchwc_conv_B_arg);
     }
   }
@@ -580,7 +580,7 @@ Node& NchwcTransformerImpl::InsertReshape(NodeArg* input_arg,
     }
     shape_tensor_proto.add_dims(split_channels ? kNchwcDims + 1 : kNchwcDims);
 
-    shape_arg = &graph_utils::AddInitializer(graph_, shape_tensor_proto);
+    shape_arg = &graph_utils::AddInitializerWithOrtValue(graph_, shape_tensor_proto);
   }
 
   Node& reshape_node = graph_.AddNode(graph_.GenerateNodeName("Reshape"),
@@ -896,7 +896,7 @@ void NchwcTransformerImpl::TransformBatchNormalization(Node& node) {
   nchwc_conv_W_tensor_proto.add_dims(1);
   nchwc_conv_W_tensor_proto.add_dims(1);
 
-  auto* nchwc_conv_W_arg = &graph_utils::AddInitializer(graph_, nchwc_conv_W_tensor_proto);
+  auto* nchwc_conv_W_arg = &graph_utils::AddInitializerWithOrtValue(graph_, nchwc_conv_W_tensor_proto);
 
   std::copy_n(bn_B.data<float>(), channels, padded_buffer.data());
 
@@ -907,7 +907,7 @@ void NchwcTransformerImpl::TransformBatchNormalization(Node& node) {
                                  gsl::narrow<size_t>(nchwc_channels) * sizeof(float));
   nchwc_conv_B_tensor_proto.add_dims(nchwc_channels);
 
-  auto* nchwc_conv_B_arg = &graph_utils::AddInitializer(graph_, nchwc_conv_B_tensor_proto);
+  auto* nchwc_conv_B_arg = &graph_utils::AddInitializerWithOrtValue(graph_, nchwc_conv_B_tensor_proto);
 
   // Create the replacement node.
   std::string nchwc_node_name = graph_.GenerateNodeName(output_defs[0]->Name() + "_bn_nchwc");
@@ -1149,15 +1149,15 @@ void NchwcTransformerImpl::TrackTransposeFromNhwc(Node& node) {
 }
 
 void NchwcTransformerImpl::Transform(Node& node) {
-  if (graph_utils::IsSupportedOptypeVersionAndDomain(node, "Transpose", {1, 13})) {
+  if (graph_utils::IsSupportedOptypeVersionAndDomain(node, "Transpose", {1, 13, 21, 23, 24, 25})) {
     TrackTransposeFromNhwc(node);
   }
 
-  if (graph_utils::IsSupportedOptypeVersionAndDomain(node, "Conv", {1, 11}) ||
+  if (graph_utils::IsSupportedOptypeVersionAndDomain(node, "Conv", {1, 11, 22}) ||
       graph_utils::IsSupportedOptypeVersionAndDomain(node, "FusedConv", {1}, kMSDomain)) {
     TransformConv(node);
-  } else if (graph_utils::IsSupportedOptypeVersionAndDomain(node, "MaxPool", {1, 8, 10, 11, 12}) ||
-             graph_utils::IsSupportedOptypeVersionAndDomain(node, "AveragePool", {1, 7, 10, 11})) {
+  } else if (graph_utils::IsSupportedOptypeVersionAndDomain(node, "MaxPool", {1, 8, 10, 11, 12, 22}) ||
+             graph_utils::IsSupportedOptypeVersionAndDomain(node, "AveragePool", {1, 7, 10, 11, 19, 22})) {
     TransformPool(node);
   } else if (node.GetInputEdgesCount() == 0 && node.InputDefs().size() != 0) {
     // The following transforms only run when the input edge count has already
@@ -1176,15 +1176,15 @@ void NchwcTransformerImpl::Transform(Node& node) {
                graph_utils::IsSupportedOptypeVersionAndDomain(node, "Sigmoid", {6, 13}) ||
                graph_utils::IsSupportedOptypeVersionAndDomain(node, "Tanh", {6, 13})) {
       TransformActivation(node);
-    } else if (graph_utils::IsSupportedOptypeVersionAndDomain(node, "BatchNormalization", {7, 9, 14})) {
+    } else if (graph_utils::IsSupportedOptypeVersionAndDomain(node, "BatchNormalization", {7, 9, 14, 15})) {
       TransformBatchNormalization(node);
-    } else if (graph_utils::IsSupportedOptypeVersionAndDomain(node, "Transpose", {1, 13})) {
+    } else if (graph_utils::IsSupportedOptypeVersionAndDomain(node, "Transpose", {1, 13, 21, 23, 24, 25})) {
       TransformTransposeToNhwc(node);
     } else if (graph_utils::IsSupportedOptypeVersionAndDomain(node, "Upsample", {9, 13}) ||
-               graph_utils::IsSupportedOptypeVersionAndDomain(node, "Resize", {10, 11, 13})) {
+               graph_utils::IsSupportedOptypeVersionAndDomain(node, "Resize", {10, 11, 13, 18, 19})) {
       TransformResize(node);
-    } else if (graph_utils::IsSupportedOptypeVersionAndDomain(node, "GlobalMaxPool", {1}) ||
-               graph_utils::IsSupportedOptypeVersionAndDomain(node, "GlobalAveragePool", {1})) {
+    } else if (graph_utils::IsSupportedOptypeVersionAndDomain(node, "GlobalMaxPool", {1, 22}) ||
+               graph_utils::IsSupportedOptypeVersionAndDomain(node, "GlobalAveragePool", {1, 22})) {
       // Convert these pooling types only if the input is already in NCHWc format.
       TransformPool(node);
     }

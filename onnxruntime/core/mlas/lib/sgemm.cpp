@@ -1061,7 +1061,7 @@ Return Value:
 
         size_t RowsHandled;
 
-#if (defined(MLAS_TARGET_AMD64_IX86) || defined(MLAS_TARGET_POWER) || defined(MLAS_TARGET_LARCH64)) && !defined(FORCE_GENERIC_ALGORITHMS)
+#if (defined(MLAS_TARGET_AMD64_IX86) || defined(MLAS_TARGET_POWER) || defined(MLAS_TARGET_S390X) || defined(MLAS_TARGET_LARCH64)) && !defined(FORCE_GENERIC_ALGORITHMS)
         RowsHandled = GetMlasPlatform().GemmFloatKernel(A, B, C, CountK, CountM, CountN, lda, ldc, alpha, ZeroMode);
 #else
         if (ZeroMode) {
@@ -1670,7 +1670,7 @@ Return Value:
     // Compute the number of bytes required to hold the packed buffer.
     //
     // KleidiAI or other override
-    #if defined(USE_KLEIDIAI) && !defined(_MSC_VER)
+    #if defined(USE_KLEIDIAI)
     if (GetMlasPlatform().MlasGemmPackBSizeOverride != nullptr &&
         // TODO: Remove once KAI supports transposing for A
         TransA != CBLAS_TRANSPOSE::CblasTrans) {
@@ -1737,7 +1737,7 @@ Return Value:
 
 --*/
 {
-#if defined(USE_KLEIDIAI) && !defined(_MSC_VER)
+#if defined(USE_KLEIDIAI)
     if (GetMlasPlatform().MlasGemmPackBOverride != nullptr  &&
         // TODO: Remove once KAI supports transposing for A
         TransA != CBLAS_TRANSPOSE::CblasTrans    &&

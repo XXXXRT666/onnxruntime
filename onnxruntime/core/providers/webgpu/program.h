@@ -7,11 +7,23 @@
 #include <vector>
 #include <iosfwd>
 
+#ifdef _MSC_VER
+#pragma warning(push)
+// C4702: unreachable code
+#pragma warning(disable : 4702)
+#endif  // _MSC_VER
+
 #include <absl/strings/str_join.h>
+
+#ifdef _MSC_VER
+#pragma warning(pop)
+#endif  // _MSC_VER
 
 #include "core/common/common.h"
 #include "core/common/safeint.h"
 #include "core/framework/tensor.h"
+
+#include "core/providers/webgpu/string_utils.h"
 
 namespace onnxruntime {
 namespace webgpu {
@@ -27,6 +39,7 @@ enum class ProgramUniformVariableDataType {
   Int32,
 };
 std::ostream& operator<<(std::ostream& os, ProgramUniformVariableDataType);
+OStringStream& operator<<(OStringStream& os, ProgramUniformVariableDataType);
 
 constexpr size_t ProgramUniformVariableDataTypeSize[] = {sizeof(float), sizeof(uint16_t), sizeof(uint32_t), sizeof(int32_t)};
 
@@ -70,6 +83,7 @@ enum class ProgramConstantDataType {
   Bool
 };
 std::ostream& operator<<(std::ostream& os, ProgramConstantDataType);
+OStringStream& operator<<(OStringStream& os, ProgramConstantDataType);
 
 constexpr std::string_view ProgramConstantDataTypeName[] = {"f32", "f16", "u32", "i32", "bool"};
 
@@ -148,7 +162,7 @@ enum class ProgramTensorMetadataDependency : int {
   TypeAndRank = Type | Rank,
   TypeAndShape = Type | Shape,
 };
-std::ostream& operator<<(std::ostream& os, ProgramTensorMetadataDependency);
+OStringStream& operator<<(OStringStream& os, ProgramTensorMetadataDependency);
 
 #if defined(__GNUC__)
 #pragma GCC diagnostic push
@@ -206,7 +220,7 @@ enum class ProgramVariableDataType {
   // if you add a new type here, you also need to update ProgramVariableDataTypeName
 };
 #ifndef NDEBUG
-std::ostream& operator<<(std::ostream& os, ProgramVariableDataType);
+OStringStream& operator<<(OStringStream& os, ProgramVariableDataType);
 #endif
 
 int NumberOfComponents(ProgramVariableDataType type);
@@ -226,7 +240,6 @@ struct ProgramInput {
   ProgramInput(const Tensor* tensor, ProgramTensorMetadataDependency dependency, const TensorShape& override_shape, int component);
 
   const Tensor* tensor;
-  uint32_t segments = 1;
   ProgramTensorMetadataDependency dependency;
   ProgramVariableDataType var_type;
   bool use_override_shape;
@@ -236,17 +249,19 @@ struct ProgramInput {
 struct ProgramOutput {
  private:
   struct AtomicTag {};
+  struct FlattenTag {};
 
  public:
   constexpr static const AtomicTag Atomic{};
+  constexpr static const FlattenTag Flatten{};
 
   ProgramOutput(Tensor* tensor);
   ProgramOutput(Tensor* tensor, ProgramTensorMetadataDependency dependency, int component = 1);
   ProgramOutput(Tensor* tensor, ProgramTensorMetadataDependency dependency, AtomicTag);
   ProgramOutput(Tensor* tensor, ProgramTensorMetadataDependency dependency, const TensorShape& override_shape, int component);
+  ProgramOutput(Tensor* tensor, ProgramTensorMetadataDependency dependency, FlattenTag, int component = 1);
 
   Tensor* tensor;
-  uint32_t segments = 1;
   ProgramTensorMetadataDependency dependency;
   ProgramVariableDataType var_type;
   bool is_atomic;
@@ -348,18 +363,6 @@ class ProgramBase {
   inline const ProgramMetadata& Metadata() const { return metadata_; }
   inline const std::string& CacheHint() const { return cache_hint_; }
   inline const std::vector<ProgramInput>& Inputs() const { return inputs_; }
-  inline void setSegmentsForInput(size_t index, uint32_t segments) {
-    if (index >= inputs_.size()) {
-      throw std::out_of_range("input index out of range");
-    }
-    inputs_[index].segments = segments;
-  }
-  inline void setSegmentsForOutput(size_t index, uint32_t segments) {
-    if (index >= outputs_.size()) {
-      throw std::out_of_range("output index out of range");
-    }
-    outputs_[index].segments = segments;
-  }
   inline const std::vector<ProgramOutput>& Outputs() const { return outputs_; }
   inline const std::vector<TensorShape>& Indices() const { return indices_; }
   inline uint32_t DispatchGroupSizeX() const { return dispatch_group_size_x_; }

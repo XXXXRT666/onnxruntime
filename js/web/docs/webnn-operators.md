@@ -46,13 +46,13 @@ platforms. Check the [WebNN status](https://webmachinelearning.github.io/webnn-s
 | GatherElements | ai.onnx(11-12, 13+) | gatherElements | |
 | GatherND | ai.onnx(11, 12, 13+) | gatherND | Only supports 'batch_dims' == 0 |
 | Gelu | ai.onnx(20+) | gelu | |
-| Gemm | ai.onnx(7-8, 9-10, 11-12, 13+) | gemm | Only supports 1-D 'C' input |
+| Gemm | ai.onnx(7-8, 9-10, 11-12, 13+) | gemm | |
 | GlobalAveragePool | ai.onnx(7+) | averagePool2d | Only supports 4-D input |
 | GlobalMaxPool | ai.onnx(7+) | maxPool2d | Only supports 4-D input |
 | GlobalLpPool| ai.onnx(7+) | l2Pool2d | Only supports 4-D input, 'p' value is 2 |
 | Greater | ai.onnx(7-8, 9-12, 13+) | greater | |
 | GreaterOrEqual | ai.onnx(12-15, 16+) | greaterOrEqual | |
-| GroupQueryAttention | com.microsoft(1+) | add, cast, concat, constant, cumulativeSum, div, expand, lesser, matmul, reshape, scatterND, softmax, transpose, where | Only supports input total_sequence_length is constant and past_sequence_length of past kv equals to present_sequence_length of present kv. Does not support cos_cache and sin_cache inputs |
+| GroupQueryAttention | com.microsoft(1+) | add, cast, concat, constant, cumulativeSum, div, expand, lesser, matmul, reshape, scatterND, softmax, transpose, where | Only supports input total_sequence_length is constant and past_sequence_length of past kv equals to present_sequence_length of present kv. |
 | GRU | ai.onnx(7-13, 14-21, 22+) | gru | Only supports 'layout' == 0. 'clip' is not supported. The activation functions in 'activations' must be one of 'Relu', 'Tanh', 'Sigmoid'. Forward and backward activations must be the same if bidirectional. 'sequence_lens' if present should be constant with values equal to the first dimension length of input 'X' |
 | HardSigmoid | ai.onnx(7+) | hardSigmoid | |
 | HardSwish | ai.onnx(14+) | hardSwish | |
